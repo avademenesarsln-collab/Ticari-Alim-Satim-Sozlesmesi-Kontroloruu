@@ -44,7 +44,7 @@ if st.button("Sözleşmeyi Hukuken Analiz Et"):
                     prompt,
                     generation_config=genai.types.GenerationConfig(
                         temperature=0.1,
-                        max_output_tokens=4096,
+                        max_output_tokens=8192,
                     )
                 )
                 
