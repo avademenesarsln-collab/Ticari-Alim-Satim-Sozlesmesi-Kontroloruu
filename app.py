@@ -1,13 +1,15 @@
 import streamlit as st
 import google.generativeai as genai
+import PyPDF2
+import docx
 
 # Sayfa Ayarları
 st.set_page_config(page_title="Ticari Sözleşme Asistanı", page_icon="⚖️", layout="wide")
 
 st.title("⚖️ Ticari Mal Alım Satım Sözleşmesi Asistanı")
-st.write("Sözleşme taslağınızı aşağıya yapıştırın. Yapay zeka; süreler, yetki, faiz ve edimler açısından hukuki riskleri analiz edip ilgili mevzuatı önünüze getirsin.")
+st.write("Sözleşme taslağınızı PDF veya Word olarak yükleyin, yapay zeka hukuki riskleri analiz etsin.")
 
-# Şifre Çekme ve Model Ayarlama (Günlük limiti geniş olan 3.5 sürümü)
+# Şifre Çekme ve Model Ayarlama
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=GEMINI_API_KEY)
@@ -15,11 +17,38 @@ try:
 except Exception as e:
     st.error("API Anahtarı bulunamadı. Lütfen Streamlit Secrets ayarlarınızı kontrol edin.")
 
-# Kullanıcıdan sözleşme metnini alacağımız geniş metin kutusu
-sozlesme_metni = st.text_area("İncelenecek Sözleşme Metnini Buraya Yapıştırın:", height=300)
+# 1. DOSYA YÜKLEME ALANI
+yuklenen_dosya = st.file_uploader("Sözleşme Dosyasını Yükleyin (PDF veya DOCX formatında)", type=["pdf", "docx"])
+
+sozlesme_metni = ""
+
+# 2. DOSYA OKUMA İŞLEMİ
+if yuklenen_dosya is not None:
+    if yuklenen_dosya.name.endswith('.pdf'):
+        try:
+            pdf_okuyucu = PyPDF2.PdfReader(yuklenen_dosya)
+            for sayfa in pdf_okuyucu.pages:
+                if sayfa.extract_text():
+                    sozlesme_metni += sayfa.extract_text() + "\n"
+            st.success("✅ PDF başarıyla okundu! Metni aşağıda inceleyebilir veya düzenleyebilirsiniz.")
+        except Exception as e:
+            st.error(f"PDF okuma hatası: {e}")
+            
+    elif yuklenen_dosya.name.endswith('.docx'):
+        try:
+            doc = docx.Document(yuklenen_dosya)
+            for paragraf in doc.paragraphs:
+                sozlesme_metni += paragraf.text + "\n"
+            st.success("✅ Word dosyası başarıyla okundu! Metni aşağıda inceleyebilir veya düzenleyebilirsiniz.")
+        except Exception as e:
+            st.error(f"Word okuma hatası: {e}")
+
+# 3. METİN KUTUSU (Hem fallback hem de okunan metni göstermek için)
+# 'value' parametresine sozlesme_metni'ni veriyoruz ki dosya yüklendiğinde kutu otomatik dolsun.
+guncel_metin = st.text_area("Sözleşme Metni (İsterseniz düzenleyebilir veya doğrudan buraya yapıştırabilirsiniz):", value=sozlesme_metni, height=300)
 
 if st.button("Sözleşmeyi Hukuken Analiz Et"):
-    if sozlesme_metni:
+    if guncel_metin.strip():
         with st.spinner("Sözleşme maddeleri taranıyor, hukuki riskler ve mevzuat eşleştiriliyor..."):
             
             prompt = f"""
@@ -35,11 +64,10 @@ if st.button("Sözleşmeyi Hukuken Analiz Et"):
             Format: Raporlama dilinde, net, uyarıcı ve doğrudan hukuki çözüm odaklı olsun.
 
             İncelenecek Sözleşme Taslağı:
-            {sozlesme_metni}
+            {guncel_metin}
             """
 
             try:
-                # Yaratıcılık sıfıra yakın (0.1), kanuna mutlak sadakat.
                 response = model.generate_content(
                     prompt,
                     generation_config=genai.types.GenerationConfig(
@@ -55,4 +83,4 @@ if st.button("Sözleşmeyi Hukuken Analiz Et"):
                 st.error(f"Yapay Zeka API Hatası: {e}")
                 
     else:
-        st.warning("Lütfen analiz edilecek sözleşme metnini kutuya yapıştırın.")
+        st.warning("Lütfen analiz edilecek bir dosya yükleyin veya kutuya sözleşme metnini girin.")
