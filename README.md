@@ -1,0 +1,1 @@
+# Ticari-Alim-Satim-Sozlesmesi-Kontroloruu
