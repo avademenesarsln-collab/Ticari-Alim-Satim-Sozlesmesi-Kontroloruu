@@ -2,12 +2,17 @@ import streamlit as st
 import google.generativeai as genai
 import PyPDF2
 import docx
+import io
 
 # Sayfa Ayarları
 st.set_page_config(page_title="Ticari Sözleşme Asistanı", page_icon="⚖️", layout="wide")
 
 st.title("⚖️ Ticari Mal Alım Satım Sözleşmesi Asistanı")
 st.write("Sözleşme taslağınızı PDF veya Word olarak yükleyin, yapay zeka hukuki riskleri bir denetim tablosu olarak analiz etsin.")
+
+# Hafıza (Session State) Ayarı: İndir butonuna basınca analizin ekrandan silinmesini engeller
+if "analiz_raporu" not in st.session_state:
+    st.session_state.analiz_raporu = None
 
 # Şifre Çekme ve Model Ayarlama
 try:
@@ -46,11 +51,11 @@ if yuklenen_dosya is not None:
 # 3. METİN KUTUSU
 guncel_metin = st.text_area("Sözleşme Metni (İsterseniz düzenleyebilir veya doğrudan buraya yapıştırabilirsiniz):", value=sozlesme_metni, height=300)
 
+# 4. ANALİZ BUTONU
 if st.button("Sözleşmeyi Hukuken Analiz Et"):
     if guncel_metin.strip():
         with st.spinner("Sözleşme riskleri hesaplanıyor ve denetim tablosu oluşturuluyor..."):
             
-            # YENİ: TABLO FORMATLI PROMPT
             prompt = f"""
             Sen Türkiye'de görev yapan, İstanbul Barosuna kayıtlı uzman bir Ticaret Hukuku Avukatı ve İç Denetim/Risk Yönetimi uzmanısın.
             Aşağıdaki ticari mal alım satım sözleşmesi metnini incele. 
@@ -81,12 +86,33 @@ if st.button("Sözleşmeyi Hukuken Analiz Et"):
                         max_output_tokens=8192,
                     )
                 )
-                
-                st.success("Hukuki Analiz Tamamlandı!")
-                st.markdown(response.text)
+                # Analiz sonucunu hafızaya kaydediyoruz
+                st.session_state.analiz_raporu = response.text
                 
             except Exception as e:
                 st.error(f"Yapay Zeka API Hatası: {e}")
                 
     else:
         st.warning("Lütfen analiz edilecek bir dosya yükleyin veya kutuya sözleşme metnini girin.")
+
+# 5. SONUÇ EKRANI VE İNDİRME BUTONU
+if st.session_state.analiz_raporu:
+    st.success("Hukuki Analiz Tamamlandı!")
+    st.markdown(st.session_state.analiz_raporu)
+    
+    # Arka planda Word dosyası oluşturma işlemi
+    doc = docx.Document()
+    doc.add_heading('Sözleşme Hukuki Risk Denetim Raporu', 0)
+    doc.add_paragraph("Bu rapor, Yapay Zeka Destekli Ticari Sözleşme Asistanı tarafından oluşturulmuştur.\n")
+    doc.add_paragraph(st.session_state.analiz_raporu)
+    
+    # Dosyayı bilgisayara indirmek için sanal hafızada (BytesIO) tutuyoruz
+    bio = io.BytesIO()
+    doc.save(bio)
+    
+    st.download_button(
+        label="📄 Raporu Word (.docx) Olarak İndir",
+        data=bio.getvalue(),
+        file_name="sozlesme_risk_raporu.docx",
+        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
