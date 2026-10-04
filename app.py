@@ -7,7 +7,7 @@ import docx
 st.set_page_config(page_title="Ticari Sözleşme Asistanı", page_icon="⚖️", layout="wide")
 
 st.title("⚖️ Ticari Mal Alım Satım Sözleşmesi Asistanı")
-st.write("Sözleşme taslağınızı PDF veya Word olarak yükleyin, yapay zeka hukuki riskleri analiz etsin.")
+st.write("Sözleşme taslağınızı PDF veya Word olarak yükleyin, yapay zeka hukuki riskleri bir denetim tablosu olarak analiz etsin.")
 
 # Şifre Çekme ve Model Ayarlama
 try:
@@ -43,25 +43,31 @@ if yuklenen_dosya is not None:
         except Exception as e:
             st.error(f"Word okuma hatası: {e}")
 
-# 3. METİN KUTUSU (Hem fallback hem de okunan metni göstermek için)
-# 'value' parametresine sozlesme_metni'ni veriyoruz ki dosya yüklendiğinde kutu otomatik dolsun.
+# 3. METİN KUTUSU
 guncel_metin = st.text_area("Sözleşme Metni (İsterseniz düzenleyebilir veya doğrudan buraya yapıştırabilirsiniz):", value=sozlesme_metni, height=300)
 
 if st.button("Sözleşmeyi Hukuken Analiz Et"):
     if guncel_metin.strip():
-        with st.spinner("Sözleşme maddeleri taranıyor, hukuki riskler ve mevzuat eşleştiriliyor..."):
+        with st.spinner("Sözleşme riskleri hesaplanıyor ve denetim tablosu oluşturuluyor..."):
             
+            # YENİ: TABLO FORMATLI PROMPT
             prompt = f"""
             Sen Türkiye'de görev yapan, İstanbul Barosuna kayıtlı uzman bir Ticaret Hukuku Avukatı ve İç Denetim/Risk Yönetimi uzmanısın.
-            Aşağıdaki ticari mal alım satım sözleşmesi metnini incele. Sadece genel geçer yorumlar YAPMA. 
-            Şu 4 ana başlıkta inceleme yap, sözleşmedeki riskli/eksik maddeleri belirt ve DOĞRUDAN ilgili mevzuat maddelerini (TTK, TBK, HMK madde numaraları ve içerikleriyle) referans göstererek uyarılarda bulun:
+            Aşağıdaki ticari mal alım satım sözleşmesi metnini incele. 
+            
+            Şu 4 ana başlıkta inceleme yap:
+            1. SÜRELER VE İHBARLAR: TTK m.23 ayıp ihbar süreleri ve TBK zamanaşımı süreleri.
+            2. YETKİLİ MAHKEME VE ÇÖZÜM: HMK m.17 tacirler arası yetki sözleşmesi geçerlilik şartları.
+            3. ALACAK FAİZİ: TTK m.1530 ticari işlerde temerrüt faizi oranları.
+            4. EDİMLER VE HASARIN GEÇİŞİ: Teslim şartları ve TBK hasar sorumluluğu.
 
-            1. SÜRELER VE İHBARLAR: TTK m.23 ayıp ihbar süreleri (2, 8 gün vs.) ve TBK zamanaşımı süreleri açısından değerlendir.
-            2. YETKİLİ MAHKEME VE ÇÖZÜM: HMK m.17 tacirler arası yetki sözleşmesi geçerlilik şartları açısından incele.
-            3. ALACAK FAİZİ: TTK m.1530 ticari işlerde temerrüt faizi ve avans faizi oranları açısından sözleşmedeki düzenlemeyi (veya eksikliğini) yorumla.
-            4. EDİMLER VE HASARIN GEÇİŞİ: Teslim şartları, ifa zamanı ve TBK hasar sorumluluğu açısından riskleri belirle.
+            LÜTFEN ÇIKTIYI SADECE AŞAĞIDAKİ GİBİ BİR MARKDOWN TABLOSU FORMATINDA VER. Uzun paragraflar yazma.
+            
+            | İnceleme Konusu | Sözleşmedeki Mevcut Durum | Hukuki Risk Seviyesi (Düşük/Orta/Yüksek) | İlgili Mevzuat (TTK/TBK/HMK) | Revizyon Önerisi ve Çözüm |
+            | :--- | :--- | :--- | :--- | :--- |
+            | (Konu) | (Sözleşmede ne yazıyor) | (Risk derecesi) | (Kanun maddesi) | (Nasıl düzeltilmeli) |
 
-            Format: Raporlama dilinde, net, uyarıcı ve doğrudan hukuki çözüm odaklı olsun.
+            Tablonun altına, sözleşmenin genel risk durumunu özetleyen en fazla 3 cümlelik kısa bir "Yönetici Özeti (Executive Summary)" ekle.
 
             İncelenecek Sözleşme Taslağı:
             {guncel_metin}
