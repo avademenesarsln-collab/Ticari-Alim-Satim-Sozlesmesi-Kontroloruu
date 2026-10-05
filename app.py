@@ -18,7 +18,7 @@ if "analiz_raporu" not in st.session_state:
 try:
     GEMINI_API_KEY = st.secrets["GEMINI_API_KEY"]
     genai.configure(api_key=GEMINI_API_KEY)
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-3.5-flash')
 except Exception as e:
     st.error("API Anahtarı bulunamadı. Lütfen Streamlit Secrets ayarlarınızı kontrol edin.")
 
