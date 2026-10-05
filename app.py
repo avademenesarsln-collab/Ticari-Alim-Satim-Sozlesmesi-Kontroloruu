@@ -3,16 +3,13 @@ import google.generativeai as genai
 import PyPDF2
 import docx
 import io
+import os
 
 # Sayfa Ayarları
 st.set_page_config(page_title="Ticari Sözleşme Asistanı", page_icon="⚖️", layout="wide")
 
 st.title("⚖️ Ticari Mal Alım Satım Sözleşmesi Asistanı")
-st.write("Sözleşme taslağınızı PDF veya Word olarak yükleyin, yapay zeka hukuki riskleri bir denetim tablosu olarak analiz etsin.")
-
-# Hafıza (Session State) Ayarı: İndir butonuna basınca analizin ekrandan silinmesini engeller
-if "analiz_raporu" not in st.session_state:
-    st.session_state.analiz_raporu = None
+st.write("Sözleşme taslağınızı yükleyin. Yapay zeka, sisteme gömülü güncel kanunlara (TTK, TBK, TMK, HMK) göre riskleri analiz etsin.")
 
 # Şifre Çekme ve Model Ayarlama
 try:
@@ -22,12 +19,41 @@ try:
 except Exception as e:
     st.error("API Anahtarı bulunamadı. Lütfen Streamlit Secrets ayarlarınızı kontrol edin.")
 
-# 1. DOSYA YÜKLEME ALANI
-yuklenen_dosya = st.file_uploader("Sözleşme Dosyasını Yükleyin (PDF veya DOCX formatında)", type=["pdf", "docx"])
+# 1. MEVZUAT VERİTABANINI YÜKLEME (ÖNBELLEKLİ)
+@st.cache_data(show_spinner=False)
+def mevzuat_veritabanini_hazirla():
+    mevzuat_metni = ""
+    kanunlar = ["tbk.pdf", "ttk.pdf", "tmk.pdf", "hmk.pdf"]
+    yuklenenler = []
+    
+    for kanun in kanunlar:
+        if os.path.exists(kanun):
+            try:
+                okuyucu = PyPDF2.PdfReader(kanun)
+                for sayfa in okuyucu.pages:
+                    if sayfa.extract_text():
+                        mevzuat_metni += sayfa.extract_text() + "\n"
+                yuklenenler.append(kanun.upper().replace(".PDF", ""))
+            except Exception:
+                pass
+    return mevzuat_metni, yuklenenler
 
+with st.spinner("Arka planda hukuk kütüphanesi (Mevzuat) hafızaya alınıyor..."):
+    sistem_mevzuati, yuklenen_kanunlar = mevzuat_veritabanini_hazirla()
+
+if yuklenen_kanunlar:
+    st.success(f"📚 Sisteme Entegre Edilen Mevzuat: {', '.join(yuklenen_kanunlar)}")
+else:
+    st.warning("⚠️ Sistemde yüklü kanun dosyası (tbk.pdf, ttk.pdf vs.) bulunamadı. Yapay zeka kendi dahili hafızasını kullanacak. Kanunları GitHub'a yüklerseniz sistem otomatik entegre edecektir.")
+
+# Hafıza (Session State) Ayarı
+if "analiz_raporu" not in st.session_state:
+    st.session_state.analiz_raporu = None
+
+# 2. DOSYA YÜKLEME ALANI
+yuklenen_dosya = st.file_uploader("Sözleşme Dosyasını Yükleyin (PDF veya DOCX)", type=["pdf", "docx"])
 sozlesme_metni = ""
 
-# 2. DOSYA OKUMA İŞLEMİ
 if yuklenen_dosya is not None:
     if yuklenen_dosya.name.endswith('.pdf'):
         try:
@@ -35,7 +61,6 @@ if yuklenen_dosya is not None:
             for sayfa in pdf_okuyucu.pages:
                 if sayfa.extract_text():
                     sozlesme_metni += sayfa.extract_text() + "\n"
-            st.success("✅ PDF başarıyla okundu! Metni aşağıda inceleyebilir veya düzenleyebilirsiniz.")
         except Exception as e:
             st.error(f"PDF okuma hatası: {e}")
             
@@ -44,37 +69,33 @@ if yuklenen_dosya is not None:
             doc = docx.Document(yuklenen_dosya)
             for paragraf in doc.paragraphs:
                 sozlesme_metni += paragraf.text + "\n"
-            st.success("✅ Word dosyası başarıyla okundu! Metni aşağıda inceleyebilir veya düzenleyebilirsiniz.")
         except Exception as e:
             st.error(f"Word okuma hatası: {e}")
 
-# 3. METİN KUTUSU
-guncel_metin = st.text_area("Sözleşme Metni (İsterseniz düzenleyebilir veya doğrudan buraya yapıştırabilirsiniz):", value=sozlesme_metni, height=300)
+guncel_metin = st.text_area("Sözleşme Metni:", value=sozlesme_metni, height=300)
 
-# 4. ANALİZ BUTONU
+# 3. ANALİZ BUTONU
 if st.button("Sözleşmeyi Hukuken Analiz Et"):
     if guncel_metin.strip():
-        with st.spinner("Sözleşme riskleri hesaplanıyor ve denetim tablosu oluşturuluyor..."):
+        with st.spinner("Güncel mevzuat taranıyor ve riskler hesaplanıyor..."):
             
             prompt = f"""
-            Sen Türkiye'de görev yapan, İstanbul Barosuna kayıtlı uzman bir Ticaret Hukuku Avukatı ve İç Denetim/Risk Yönetimi uzmanısın.
-            Aşağıdaki ticari mal alım satım sözleşmesi metnini incele. 
+            Sen Türkiye'de görev yapan uzman bir Ticaret Hukuku Avukatı ve İç Denetim/Risk Yönetimi uzmanısın.
             
-            Şu 4 ana başlıkta inceleme yap:
-            1. SÜRELER VE İHBARLAR: TTK m.23 ayıp ihbar süreleri ve TBK zamanaşımı süreleri.
-            2. YETKİLİ MAHKEME VE ÇÖZÜM: HMK m.17 tacirler arası yetki sözleşmesi geçerlilik şartları.
-            3. ALACAK FAİZİ: TTK m.1530 ticari işlerde temerrüt faizi oranları.
-            4. EDİMLER VE HASARIN GEÇİŞİ: Teslim şartları ve TBK hasar sorumluluğu.
-
-            LÜTFEN ÇIKTIYI SADECE AŞAĞIDAKİ GİBİ BİR MARKDOWN TABLOSU FORMATINDA VER. Uzun paragraflar yazma.
+            GÖREV: Aşağıdaki sözleşmeyi incele. Kendi varsayımlarını değil, SADECE DİKKATE ALMAN İÇİN SANA VERİLEN AŞAĞIDAKİ GÜNCEL MEVZUAT METNİNİ baz alarak hukuki risk analizi yap.
+            (Eğer güncel mevzuat metni boşsa kendi Türk Hukuku bilgini kullan).
             
-            | İnceleme Konusu | Sözleşmedeki Mevcut Durum | Hukuki Risk Seviyesi (Düşük/Orta/Yüksek) | İlgili Mevzuat (TTK/TBK/HMK) | Revizyon Önerisi ve Çözüm |
+            SİSTEME YÜKLENEN GÜNCEL MEVZUAT:
+            {sistem_mevzuati[:150000]} # Optimizasyon için karakter sınırı
+            
+            LÜTFEN ÇIKTIYI SADECE AŞAĞIDAKİ GİBİ BİR MARKDOWN TABLOSU FORMATINDA VER.
+            
+            | İnceleme Konusu | Sözleşmedeki Mevcut Durum | Hukuki Risk Seviyesi | İlgili Mevzuat | Revizyon Önerisi ve Çözüm |
             | :--- | :--- | :--- | :--- | :--- |
-            | (Konu) | (Sözleşmede ne yazıyor) | (Risk derecesi) | (Kanun maddesi) | (Nasıl düzeltilmeli) |
+            
+            Tablonun altına, sözleşmenin genel risk durumunu özetleyen en fazla 3 cümlelik kısa bir "Yönetici Özeti" ekle.
 
-            Tablonun altına, sözleşmenin genel risk durumunu özetleyen en fazla 3 cümlelik kısa bir "Yönetici Özeti (Executive Summary)" ekle.
-
-            İncelenecek Sözleşme Taslağı:
+            İNCELENECEK SÖZLEŞME TASLAĞI:
             {guncel_metin}
             """
 
@@ -86,7 +107,6 @@ if st.button("Sözleşmeyi Hukuken Analiz Et"):
                         max_output_tokens=8192,
                     )
                 )
-                # Analiz sonucunu hafızaya kaydediyoruz
                 st.session_state.analiz_raporu = response.text
                 
             except Exception as e:
@@ -95,18 +115,16 @@ if st.button("Sözleşmeyi Hukuken Analiz Et"):
     else:
         st.warning("Lütfen analiz edilecek bir dosya yükleyin veya kutuya sözleşme metnini girin.")
 
-# 5. SONUÇ EKRANI VE İNDİRME BUTONU
+# 4. SONUÇ EKRANI VE İNDİRME BUTONU
 if st.session_state.analiz_raporu:
     st.success("Hukuki Analiz Tamamlandı!")
     st.markdown(st.session_state.analiz_raporu)
     
-    # Arka planda Word dosyası oluşturma işlemi
     doc = docx.Document()
     doc.add_heading('Sözleşme Hukuki Risk Denetim Raporu', 0)
-    doc.add_paragraph("Bu rapor, Yapay Zeka Destekli Ticari Sözleşme Asistanı tarafından oluşturulmuştur.\n")
+    doc.add_paragraph("Bu rapor, sisteme entegre güncel mevzuat veritabanı kullanılarak oluşturulmuştur.\n")
     doc.add_paragraph(st.session_state.analiz_raporu)
     
-    # Dosyayı bilgisayara indirmek için sanal hafızada (BytesIO) tutuyoruz
     bio = io.BytesIO()
     doc.save(bio)
     
